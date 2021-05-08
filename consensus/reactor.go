@@ -102,17 +102,17 @@ type ReactorOption func(*Reactor)
 type Reactor struct {
 	service.BaseService
 
-	state    *State
+	State    *State
 	eventBus *types.EventBus
 	Metrics  *Metrics
 
 	mtx      tmsync.RWMutex
-	peers    map[p2p.NodeID]*PeerState
+	Peers    map[p2p.NodeID]*PeerState
 	waitSync bool
 
 	stateCh       *p2p.Channel
 	dataCh        *p2p.Channel
-	voteCh        *p2p.Channel
+	VoteCh        *p2p.Channel
 	voteSetBitsCh *p2p.Channel
 	peerUpdates   *p2p.PeerUpdates
 
@@ -125,7 +125,7 @@ type Reactor struct {
 }
 
 // NewReactor returns a reference to a new consensus reactor, which implements
-// the service.Service interface. It accepts a logger, consensus state, references
+// the service.Service interface. It accepts a logger, consensus State, references
 // to relevant p2p Channels and a channel to listen for peer updates on. The
 // reactor will close all p2p Channels when stopping.
 func NewReactor(
@@ -141,13 +141,13 @@ func NewReactor(
 ) *Reactor {
 
 	r := &Reactor{
-		state:         cs,
+		State:         cs,
 		waitSync:      waitSync,
-		peers:         make(map[p2p.NodeID]*PeerState),
+		Peers:         make(map[p2p.NodeID]*PeerState),
 		Metrics:       NopMetrics(),
 		stateCh:       stateCh,
 		dataCh:        dataCh,
-		voteCh:        voteCh,
+		VoteCh:        voteCh,
 		voteSetBitsCh: voteSetBitsCh,
 		peerUpdates:   peerUpdates,
 		stateCloseCh:  make(chan struct{}),
@@ -178,7 +178,7 @@ func (r *Reactor) OnStart() error {
 	r.subscribeToBroadcastEvents()
 
 	if !r.WaitSync() {
-		if err := r.state.Start(); err != nil {
+		if err := r.State.Start(); err != nil {
 			return err
 		}
 	}
@@ -194,20 +194,20 @@ func (r *Reactor) OnStart() error {
 
 // OnStop stops the reactor by signaling to all spawned goroutines to exit and
 // blocking until they all exit, as well as unsubscribing from events and stopping
-// state.
+// State.
 func (r *Reactor) OnStop() {
 	r.unsubscribeFromBroadcastEvents()
 
-	if err := r.state.Stop(); err != nil {
-		r.Logger.Error("failed to stop consensus state", "err", err)
+	if err := r.State.Stop(); err != nil {
+		r.Logger.Error("failed to stop consensus State", "err", err)
 	}
 
 	if !r.WaitSync() {
-		r.state.Wait()
+		r.State.Wait()
 	}
 
 	r.mtx.Lock()
-	peers := r.peers
+	peers := r.Peers
 	r.mtx.Unlock()
 
 	// wait for all spawned peer goroutines to gracefully exit
@@ -232,17 +232,17 @@ func (r *Reactor) OnStop() {
 	// panics will occur.
 	<-r.voteSetBitsCh.Done()
 	<-r.dataCh.Done()
-	<-r.voteCh.Done()
+	<-r.VoteCh.Done()
 	<-r.peerUpdates.Done()
 }
 
 // SetEventBus sets the reactor's event bus.
 func (r *Reactor) SetEventBus(b *types.EventBus) {
 	r.eventBus = b
-	r.state.SetEventBus(b)
+	r.State.SetEventBus(b)
 }
 
-// WaitSync returns whether the consensus reactor is waiting for state/fast sync.
+// WaitSync returns whether the consensus reactor is waiting for State/fast sync.
 func (r *Reactor) WaitSync() bool {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
@@ -256,18 +256,18 @@ func ReactorMetrics(metrics *Metrics) ReactorOption {
 }
 
 // SwitchToConsensus switches from fast-sync mode to consensus mode. It resets
-// the state, turns off fast-sync, and starts the consensus state-machine.
+// the State, turns off fast-sync, and starts the consensus State-machine.
 func (r *Reactor) SwitchToConsensus(state sm.State, skipWAL bool) {
 	r.Logger.Info("switching to consensus")
 
 	// we have no votes, so reconstruct LastCommit from SeenCommit
 	if state.LastBlockHeight > 0 {
-		r.state.reconstructLastCommit(state)
+		r.State.reconstructLastCommit(state)
 	}
 
 	// NOTE: The line below causes broadcastNewRoundStepRoutine() to broadcast a
 	// NewRoundStepMessage.
-	r.state.updateToState(state)
+	r.State.updateToState(state)
 
 	r.mtx.Lock()
 	r.waitSync = false
@@ -277,17 +277,17 @@ func (r *Reactor) SwitchToConsensus(state sm.State, skipWAL bool) {
 	r.Metrics.StateSyncing.Set(0)
 
 	if skipWAL {
-		r.state.doWALCatchup = false
+		r.State.doWALCatchup = false
 	}
 
-	if err := r.state.Start(); err != nil {
-		panic(fmt.Sprintf(`failed to start consensus state: %v
+	if err := r.State.Start(); err != nil {
+		panic(fmt.Sprintf(`failed to start consensus State: %v
 
 conS:
 %+v
 
 conR:
-%+v`, err, r.state, r))
+%+v`, err, r.State, r))
 	}
 }
 
@@ -307,9 +307,9 @@ func (r *Reactor) StringIndented(indent string) string {
 	defer r.mtx.RUnlock()
 
 	s := "ConsensusReactor{\n"
-	s += indent + "  " + r.state.StringIndented(indent+"  ") + "\n"
+	s += indent + "  " + r.State.StringIndented(indent+"  ") + "\n"
 
-	for _, ps := range r.peers {
+	for _, ps := range r.Peers {
 		s += indent + "  " + ps.StringIndented(indent+"  ") + "\n"
 	}
 
@@ -322,7 +322,7 @@ func (r *Reactor) GetPeerState(peerID p2p.NodeID) (*PeerState, bool) {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
-	ps, ok := r.peers[peerID]
+	ps, ok := r.Peers[peerID]
 	return ps, ok
 }
 
@@ -360,10 +360,10 @@ func (r *Reactor) broadcastHasVoteMessage(vote *types.Vote) {
 }
 
 // subscribeToBroadcastEvents subscribes for new round steps and votes using the
-// internal pubsub defined in the consensus state to broadcast them to peers
+// internal pubsub defined in the consensus State to broadcast them to Peers
 // upon receiving.
 func (r *Reactor) subscribeToBroadcastEvents() {
-	err := r.state.evsw.AddListenerForEvent(
+	err := r.State.evsw.AddListenerForEvent(
 		listenerIDConsensus,
 		types.EventNewRoundStep,
 		func(data tmevents.EventData) {
@@ -374,7 +374,7 @@ func (r *Reactor) subscribeToBroadcastEvents() {
 		r.Logger.Error("failed to add listener for events", "err", err)
 	}
 
-	err = r.state.evsw.AddListenerForEvent(
+	err = r.State.evsw.AddListenerForEvent(
 		listenerIDConsensus,
 		types.EventValidBlock,
 		func(data tmevents.EventData) {
@@ -385,7 +385,7 @@ func (r *Reactor) subscribeToBroadcastEvents() {
 		r.Logger.Error("failed to add listener for events", "err", err)
 	}
 
-	err = r.state.evsw.AddListenerForEvent(
+	err = r.State.evsw.AddListenerForEvent(
 		listenerIDConsensus,
 		types.EventVote,
 		func(data tmevents.EventData) {
@@ -398,7 +398,7 @@ func (r *Reactor) subscribeToBroadcastEvents() {
 }
 
 func (r *Reactor) unsubscribeFromBroadcastEvents() {
-	r.state.evsw.RemoveListener(listenerIDConsensus)
+	r.State.evsw.RemoveListener(listenerIDConsensus)
 }
 
 func makeRoundStepMessage(rs *cstypes.RoundState) *tmcons.NewRoundStep {
@@ -412,7 +412,7 @@ func makeRoundStepMessage(rs *cstypes.RoundState) *tmcons.NewRoundStep {
 }
 
 func (r *Reactor) sendNewRoundStepMessage(peerID p2p.NodeID) {
-	rs := r.state.GetRoundState()
+	rs := r.State.GetRoundState()
 	msg := makeRoundStepMessage(rs)
 	r.stateCh.Out <- p2p.Envelope{
 		To:      peerID,
@@ -421,20 +421,20 @@ func (r *Reactor) sendNewRoundStepMessage(peerID p2p.NodeID) {
 }
 
 func (r *Reactor) gossipDataForCatchup(rs *cstypes.RoundState, prs *cstypes.PeerRoundState, ps *PeerState) {
-	logger := r.Logger.With("height", prs.Height).With("peer", ps.peerID)
+	logger := r.Logger.With("height", prs.Height).With("peer", ps.PeerID)
 
 	if index, ok := prs.ProposalBlockParts.Not().PickRandom(); ok {
 		// ensure that the peer's PartSetHeader is correct
-		blockMeta := r.state.blockStore.LoadBlockMeta(prs.Height)
+		blockMeta := r.State.blockStore.LoadBlockMeta(prs.Height)
 		if blockMeta == nil {
 			logger.Error(
 				"failed to load block meta",
 				"our_height", rs.Height,
-				"blockstore_base", r.state.blockStore.Base(),
-				"blockstore_height", r.state.blockStore.Height(),
+				"blockstore_base", r.State.blockStore.Base(),
+				"blockstore_height", r.State.blockStore.Height(),
 			)
 
-			time.Sleep(r.state.config.PeerGossipSleepDuration)
+			time.Sleep(r.State.config.PeerGossipSleepDuration)
 			return
 		} else if !blockMeta.BlockID.PartSetHeader.Equals(prs.ProposalBlockPartSetHeader) {
 			logger.Info(
@@ -443,11 +443,11 @@ func (r *Reactor) gossipDataForCatchup(rs *cstypes.RoundState, prs *cstypes.Peer
 				"peer_block_part_set_header", prs.ProposalBlockPartSetHeader,
 			)
 
-			time.Sleep(r.state.config.PeerGossipSleepDuration)
+			time.Sleep(r.State.config.PeerGossipSleepDuration)
 			return
 		}
 
-		part := r.state.blockStore.LoadBlockPart(prs.Height, index)
+		part := r.State.blockStore.LoadBlockPart(prs.Height, index)
 		if part == nil {
 			logger.Error(
 				"failed to load block part",
@@ -456,7 +456,7 @@ func (r *Reactor) gossipDataForCatchup(rs *cstypes.RoundState, prs *cstypes.Peer
 				"peer_block_part_set_header", prs.ProposalBlockPartSetHeader,
 			)
 
-			time.Sleep(r.state.config.PeerGossipSleepDuration)
+			time.Sleep(r.State.config.PeerGossipSleepDuration)
 			return
 		}
 
@@ -464,13 +464,13 @@ func (r *Reactor) gossipDataForCatchup(rs *cstypes.RoundState, prs *cstypes.Peer
 		if err != nil {
 			logger.Error("failed to convert block part to proto", "err", err)
 
-			time.Sleep(r.state.config.PeerGossipSleepDuration)
+			time.Sleep(r.State.config.PeerGossipSleepDuration)
 			return
 		}
 
 		logger.Debug("sending block part for catchup", "round", prs.Round, "index", index)
 		r.dataCh.Out <- p2p.Envelope{
-			To: ps.peerID,
+			To: ps.PeerID,
 			Message: &tmcons.BlockPart{
 				Height: prs.Height, // not our height, so it does not matter.
 				Round:  prs.Round,  // not our height, so it does not matter
@@ -481,11 +481,11 @@ func (r *Reactor) gossipDataForCatchup(rs *cstypes.RoundState, prs *cstypes.Peer
 		return
 	}
 
-	time.Sleep(r.state.config.PeerGossipSleepDuration)
+	time.Sleep(r.State.config.PeerGossipSleepDuration)
 }
 
 func (r *Reactor) gossipDataRoutine(ps *PeerState) {
-	logger := r.Logger.With("peer", ps.peerID)
+	logger := r.Logger.With("peer", ps.PeerID)
 
 	defer ps.broadcastWG.Done()
 
@@ -504,7 +504,7 @@ OUTER_LOOP:
 		default:
 		}
 
-		rs := r.state.GetRoundState()
+		rs := r.State.GetRoundState()
 		prs := ps.GetRoundState()
 
 		// Send proposal Block parts?
@@ -519,7 +519,7 @@ OUTER_LOOP:
 
 				logger.Debug("sending block part", "height", prs.Height, "round", prs.Round)
 				r.dataCh.Out <- p2p.Envelope{
-					To: ps.peerID,
+					To: ps.PeerID,
 					Message: &tmcons.BlockPart{
 						Height: rs.Height, // this tells peer that this part applies to us
 						Round:  rs.Round,  // this tells peer that this part applies to us
@@ -533,21 +533,21 @@ OUTER_LOOP:
 		}
 
 		// if the peer is on a previous height that we have, help catch up
-		blockStoreBase := r.state.blockStore.Base()
+		blockStoreBase := r.State.blockStore.Base()
 		if blockStoreBase > 0 && 0 < prs.Height && prs.Height < rs.Height && prs.Height >= blockStoreBase {
 			heightLogger := logger.With("height", prs.Height)
 
 			// If we never received the commit message from the peer, the block parts
 			// will not be initialized.
 			if prs.ProposalBlockParts == nil {
-				blockMeta := r.state.blockStore.LoadBlockMeta(prs.Height)
+				blockMeta := r.State.blockStore.LoadBlockMeta(prs.Height)
 				if blockMeta == nil {
 					heightLogger.Error(
 						"failed to load block meta",
 						"blockstoreBase", blockStoreBase,
-						"blockstoreHeight", r.state.blockStore.Height(),
+						"blockstoreHeight", r.State.blockStore.Height(),
 					)
-					time.Sleep(r.state.config.PeerGossipSleepDuration)
+					time.Sleep(r.State.config.PeerGossipSleepDuration)
 				} else {
 					ps.InitProposalBlockParts(blockMeta.BlockID.PartSetHeader)
 				}
@@ -563,7 +563,7 @@ OUTER_LOOP:
 
 		// if height and round don't match, sleep
 		if (rs.Height != prs.Height) || (rs.Round != prs.Round) {
-			time.Sleep(r.state.config.PeerGossipSleepDuration)
+			time.Sleep(r.State.config.PeerGossipSleepDuration)
 			continue OUTER_LOOP
 		}
 
@@ -580,7 +580,7 @@ OUTER_LOOP:
 
 				logger.Debug("sending proposal", "height", prs.Height, "round", prs.Round)
 				r.dataCh.Out <- p2p.Envelope{
-					To: ps.peerID,
+					To: ps.PeerID,
 					Message: &tmcons.Proposal{
 						Proposal: *propProto,
 					},
@@ -601,7 +601,7 @@ OUTER_LOOP:
 
 				logger.Debug("sending POL", "height", prs.Height, "round", prs.Round)
 				r.dataCh.Out <- p2p.Envelope{
-					To: ps.peerID,
+					To: ps.PeerID,
 					Message: &tmcons.ProposalPOL{
 						Height:           rs.Height,
 						ProposalPolRound: rs.Proposal.POLRound,
@@ -614,7 +614,7 @@ OUTER_LOOP:
 		}
 
 		// nothing to do -- sleep
-		time.Sleep(r.state.config.PeerGossipSleepDuration)
+		time.Sleep(r.State.config.PeerGossipSleepDuration)
 		continue OUTER_LOOP
 	}
 }
@@ -624,8 +624,8 @@ OUTER_LOOP:
 func (r *Reactor) pickSendVote(ps *PeerState, votes types.VoteSetReader) bool {
 	if vote, ok := ps.PickVoteToSend(votes); ok {
 		r.Logger.Debug("sending vote message", "ps", ps, "vote", vote)
-		r.voteCh.Out <- p2p.Envelope{
-			To: ps.peerID,
+		r.VoteCh.Out <- p2p.Envelope{
+			To: ps.PeerID,
 			Message: &tmcons.Vote{
 				Vote: vote.ToProto(),
 			},
@@ -639,7 +639,7 @@ func (r *Reactor) pickSendVote(ps *PeerState, votes types.VoteSetReader) bool {
 }
 
 func (r *Reactor) gossipVotesForHeight(rs *cstypes.RoundState, prs *cstypes.PeerRoundState, ps *PeerState) bool {
-	logger := r.Logger.With("height", prs.Height).With("peer", ps.peerID)
+	logger := r.Logger.With("height", prs.Height).With("peer", ps.PeerID)
 
 	// if there are lastCommits to send...
 	if prs.Step == cstypes.RoundStepNewHeight {
@@ -697,7 +697,7 @@ func (r *Reactor) gossipVotesForHeight(rs *cstypes.RoundState, prs *cstypes.Peer
 }
 
 func (r *Reactor) gossipVotesRoutine(ps *PeerState) {
-	logger := r.Logger.With("peer", ps.peerID)
+	logger := r.Logger.With("peer", ps.PeerID)
 
 	defer ps.broadcastWG.Done()
 
@@ -719,7 +719,7 @@ OUTER_LOOP:
 		default:
 		}
 
-		rs := r.state.GetRoundState()
+		rs := r.State.GetRoundState()
 		prs := ps.GetRoundState()
 
 		switch logThrottle {
@@ -745,11 +745,11 @@ OUTER_LOOP:
 		}
 
 		// catchup logic -- if peer is lagging by more than 1, send Commit
-		blockStoreBase := r.state.blockStore.Base()
+		blockStoreBase := r.State.blockStore.Base()
 		if blockStoreBase > 0 && prs.Height != 0 && rs.Height >= prs.Height+2 && prs.Height >= blockStoreBase {
 			// Load the block commit for prs.Height, which contains precommit
 			// signatures for prs.Height.
-			if commit := r.state.blockStore.LoadBlockCommit(prs.Height); commit != nil {
+			if commit := r.State.blockStore.LoadBlockCommit(prs.Height); commit != nil {
 				if r.pickSendVote(ps, commit) {
 					logger.Debug("picked Catchup commit to send", "height", prs.Height)
 					continue OUTER_LOOP
@@ -771,7 +771,7 @@ OUTER_LOOP:
 			logThrottle = 1
 		}
 
-		time.Sleep(r.state.config.PeerGossipSleepDuration)
+		time.Sleep(r.State.config.PeerGossipSleepDuration)
 		continue OUTER_LOOP
 	}
 }
@@ -798,13 +798,13 @@ OUTER_LOOP:
 
 		// maybe send Height/Round/Prevotes
 		{
-			rs := r.state.GetRoundState()
+			rs := r.State.GetRoundState()
 			prs := ps.GetRoundState()
 
 			if rs.Height == prs.Height {
 				if maj23, ok := rs.Votes.Prevotes(prs.Round).TwoThirdsMajority(); ok {
 					r.stateCh.Out <- p2p.Envelope{
-						To: ps.peerID,
+						To: ps.PeerID,
 						Message: &tmcons.VoteSetMaj23{
 							Height:  prs.Height,
 							Round:   prs.Round,
@@ -813,20 +813,20 @@ OUTER_LOOP:
 						},
 					}
 
-					time.Sleep(r.state.config.PeerQueryMaj23SleepDuration)
+					time.Sleep(r.State.config.PeerQueryMaj23SleepDuration)
 				}
 			}
 		}
 
 		// maybe send Height/Round/Precommits
 		{
-			rs := r.state.GetRoundState()
+			rs := r.State.GetRoundState()
 			prs := ps.GetRoundState()
 
 			if rs.Height == prs.Height {
 				if maj23, ok := rs.Votes.Precommits(prs.Round).TwoThirdsMajority(); ok {
 					r.stateCh.Out <- p2p.Envelope{
-						To: ps.peerID,
+						To: ps.PeerID,
 						Message: &tmcons.VoteSetMaj23{
 							Height:  prs.Height,
 							Round:   prs.Round,
@@ -835,20 +835,20 @@ OUTER_LOOP:
 						},
 					}
 
-					time.Sleep(r.state.config.PeerQueryMaj23SleepDuration)
+					time.Sleep(r.State.config.PeerQueryMaj23SleepDuration)
 				}
 			}
 		}
 
 		// maybe send Height/Round/ProposalPOL
 		{
-			rs := r.state.GetRoundState()
+			rs := r.State.GetRoundState()
 			prs := ps.GetRoundState()
 
 			if rs.Height == prs.Height && prs.ProposalPOLRound >= 0 {
 				if maj23, ok := rs.Votes.Prevotes(prs.ProposalPOLRound).TwoThirdsMajority(); ok {
 					r.stateCh.Out <- p2p.Envelope{
-						To: ps.peerID,
+						To: ps.PeerID,
 						Message: &tmcons.VoteSetMaj23{
 							Height:  prs.Height,
 							Round:   prs.ProposalPOLRound,
@@ -857,7 +857,7 @@ OUTER_LOOP:
 						},
 					}
 
-					time.Sleep(r.state.config.PeerQueryMaj23SleepDuration)
+					time.Sleep(r.State.config.PeerQueryMaj23SleepDuration)
 				}
 			}
 		}
@@ -869,11 +869,11 @@ OUTER_LOOP:
 		{
 			prs := ps.GetRoundState()
 
-			if prs.CatchupCommitRound != -1 && prs.Height > 0 && prs.Height <= r.state.blockStore.Height() &&
-				prs.Height >= r.state.blockStore.Base() {
-				if commit := r.state.LoadCommit(prs.Height); commit != nil {
+			if prs.CatchupCommitRound != -1 && prs.Height > 0 && prs.Height <= r.State.blockStore.Height() &&
+				prs.Height >= r.State.blockStore.Base() {
+				if commit := r.State.LoadCommit(prs.Height); commit != nil {
 					r.stateCh.Out <- p2p.Envelope{
-						To: ps.peerID,
+						To: ps.PeerID,
 						Message: &tmcons.VoteSetMaj23{
 							Height:  prs.Height,
 							Round:   commit.Round,
@@ -882,20 +882,20 @@ OUTER_LOOP:
 						},
 					}
 
-					time.Sleep(r.state.config.PeerQueryMaj23SleepDuration)
+					time.Sleep(r.State.config.PeerQueryMaj23SleepDuration)
 				}
 			}
 		}
 
-		time.Sleep(r.state.config.PeerQueryMaj23SleepDuration)
+		time.Sleep(r.State.config.PeerQueryMaj23SleepDuration)
 		continue OUTER_LOOP
 	}
 }
 
-// processPeerUpdate process a peer update message. For new or reconnected peers,
-// we create a peer state if one does not exist for the peer, which should always
+// processPeerUpdate process a peer update message. For new or reconnected Peers,
+// we create a peer State if one does not exist for the peer, which should always
 // be the case, and we spawn all the relevant goroutine to broadcast messages to
-// the peer. During peer removal, we remove the peer for our set of peers and
+// the peer. During peer removal, we remove the peer for our set of Peers and
 // signal to all spawned goroutines to gracefully exit in a non-blocking manner.
 func (r *Reactor) processPeerUpdate(peerUpdate p2p.PeerUpdate) {
 	r.Logger.Debug("received peer update", "peer", peerUpdate.NodeID, "status", peerUpdate.Status)
@@ -918,15 +918,15 @@ func (r *Reactor) processPeerUpdate(peerUpdate p2p.PeerUpdate) {
 			ok bool
 		)
 
-		ps, ok = r.peers[peerUpdate.NodeID]
+		ps, ok = r.Peers[peerUpdate.NodeID]
 		if !ok {
 			ps = NewPeerState(r.Logger, peerUpdate.NodeID)
-			r.peers[peerUpdate.NodeID] = ps
+			r.Peers[peerUpdate.NodeID] = ps
 		}
 
 		if !ps.IsRunning() {
-			// Set the peer state's closer to signal to all spawned goroutines to exit
-			// when the peer is removed. We also set the running state to ensure we
+			// Set the peer State's closer to signal to all spawned goroutines to exit
+			// when the peer is removed. We also set the running State to ensure we
 			// do not spawn multiple instances of the same goroutines and finally we
 			// set the waitgroup counter so we know when all goroutines have exited.
 			ps.broadcastWG.Add(3)
@@ -937,26 +937,26 @@ func (r *Reactor) processPeerUpdate(peerUpdate p2p.PeerUpdate) {
 			go r.gossipVotesRoutine(ps)
 			go r.queryMaj23Routine(ps)
 
-			// Send our state to the peer. If we're fast-syncing, broadcast a
+			// Send our State to the peer. If we're fast-syncing, broadcast a
 			// RoundStepMessage later upon SwitchToConsensus().
 			if !r.waitSync {
-				go r.sendNewRoundStepMessage(ps.peerID)
+				go r.sendNewRoundStepMessage(ps.PeerID)
 			}
 		}
 
 	case p2p.PeerStatusDown:
-		ps, ok := r.peers[peerUpdate.NodeID]
+		ps, ok := r.Peers[peerUpdate.NodeID]
 		if ok && ps.IsRunning() {
 			// signal to all spawned goroutines for the peer to gracefully exit
 			ps.closer.Close()
 
 			go func() {
 				// Wait for all spawned broadcast goroutines to exit before marking the
-				// peer state as no longer running and removal from the peers map.
+				// peer State as no longer running and removal from the Peers map.
 				ps.broadcastWG.Wait()
 
 				r.mtx.Lock()
-				delete(r.peers, peerUpdate.NodeID)
+				delete(r.Peers, peerUpdate.NodeID)
 				r.mtx.Unlock()
 
 				ps.SetRunning(false)
@@ -965,23 +965,23 @@ func (r *Reactor) processPeerUpdate(peerUpdate p2p.PeerUpdate) {
 	}
 }
 
-// handleStateMessage handles envelopes sent from peers on the StateChannel.
+// handleStateMessage handles envelopes sent from Peers on the StateChannel.
 // An error is returned if the message is unrecognized or if validation fails.
-// If we fail to find the peer state for the envelope sender, we perform a no-op
+// If we fail to find the peer State for the envelope sender, we perform a no-op
 // and return. This can happen when we process the envelope after the peer is
 // removed.
 func (r *Reactor) handleStateMessage(envelope p2p.Envelope, msgI Message) error {
 	ps, ok := r.GetPeerState(envelope.From)
 	if !ok || ps == nil {
-		r.Logger.Debug("failed to find peer state", "peer", envelope.From, "ch_id", "StateChannel")
+		r.Logger.Debug("failed to find peer State", "peer", envelope.From, "ch_id", "StateChannel")
 		return nil
 	}
 
 	switch msg := envelope.Message.(type) {
 	case *tmcons.NewRoundStep:
-		r.state.mtx.RLock()
-		initialHeight := r.state.state.InitialHeight
-		r.state.mtx.RUnlock()
+		r.State.Mtx.RLock()
+		initialHeight := r.State.State.InitialHeight
+		r.State.Mtx.RUnlock()
 
 		if err := msgI.(*NewRoundStepMessage).ValidateHeight(initialHeight); err != nil {
 			r.Logger.Error("peer sent us an invalid msg", "msg", msg, "err", err)
@@ -997,9 +997,9 @@ func (r *Reactor) handleStateMessage(envelope p2p.Envelope, msgI Message) error 
 		ps.ApplyHasVoteMessage(msgI.(*HasVoteMessage))
 
 	case *tmcons.VoteSetMaj23:
-		r.state.mtx.RLock()
-		height, votes := r.state.Height, r.state.Votes
-		r.state.mtx.RUnlock()
+		r.State.Mtx.RLock()
+		height, votes := r.State.Height, r.State.Votes
+		r.State.Mtx.RUnlock()
 
 		if height != msg.Height {
 			return nil
@@ -1008,7 +1008,7 @@ func (r *Reactor) handleStateMessage(envelope p2p.Envelope, msgI Message) error 
 		vsmMsg := msgI.(*VoteSetMaj23Message)
 
 		// peer claims to have a maj23 for some BlockID at <H,R,S>
-		err := votes.SetPeerMaj23(msg.Round, msg.Type, ps.peerID, vsmMsg.BlockID)
+		err := votes.SetPeerMaj23(msg.Round, msg.Type, ps.PeerID, vsmMsg.BlockID)
 		if err != nil {
 			return err
 		}
@@ -1050,8 +1050,8 @@ func (r *Reactor) handleStateMessage(envelope p2p.Envelope, msgI Message) error 
 	return nil
 }
 
-// handleDataMessage handles envelopes sent from peers on the DataChannel. If we
-// fail to find the peer state for the envelope sender, we perform a no-op and
+// handleDataMessage handles envelopes sent from Peers on the DataChannel. If we
+// fail to find the peer State for the envelope sender, we perform a no-op and
 // return. This can happen when we process the envelope after the peer is
 // removed.
 func (r *Reactor) handleDataMessage(envelope p2p.Envelope, msgI Message) error {
@@ -1059,7 +1059,7 @@ func (r *Reactor) handleDataMessage(envelope p2p.Envelope, msgI Message) error {
 
 	ps, ok := r.GetPeerState(envelope.From)
 	if !ok || ps == nil {
-		r.Logger.Debug("failed to find peer state")
+		r.Logger.Debug("failed to find peer State")
 		return nil
 	}
 
@@ -1073,7 +1073,7 @@ func (r *Reactor) handleDataMessage(envelope p2p.Envelope, msgI Message) error {
 		pMsg := msgI.(*ProposalMessage)
 
 		ps.SetHasProposal(pMsg.Proposal)
-		r.state.peerMsgQueue <- msgInfo{pMsg, envelope.From}
+		r.State.PeerMsgQueue <- MsgInfo{pMsg, envelope.From}
 
 	case *tmcons.ProposalPOL:
 		ps.ApplyProposalPOLMessage(msgI.(*ProposalPOLMessage))
@@ -1083,7 +1083,7 @@ func (r *Reactor) handleDataMessage(envelope p2p.Envelope, msgI Message) error {
 
 		ps.SetHasProposalBlockPart(bpMsg.Height, bpMsg.Round, int(bpMsg.Part.Index))
 		r.Metrics.BlockParts.With("peer_id", string(envelope.From)).Add(1)
-		r.state.peerMsgQueue <- msgInfo{bpMsg, envelope.From}
+		r.State.PeerMsgQueue <- MsgInfo{bpMsg, envelope.From}
 
 	default:
 		return fmt.Errorf("received unknown message on DataChannel: %T", msg)
@@ -1092,8 +1092,8 @@ func (r *Reactor) handleDataMessage(envelope p2p.Envelope, msgI Message) error {
 	return nil
 }
 
-// handleVoteMessage handles envelopes sent from peers on the VoteChannel. If we
-// fail to find the peer state for the envelope sender, we perform a no-op and
+// handleVoteMessage handles envelopes sent from Peers on the VoteChannel. If we
+// fail to find the peer State for the envelope sender, we perform a no-op and
 // return. This can happen when we process the envelope after the peer is
 // removed.
 func (r *Reactor) handleVoteMessage(envelope p2p.Envelope, msgI Message) error {
@@ -1101,7 +1101,7 @@ func (r *Reactor) handleVoteMessage(envelope p2p.Envelope, msgI Message) error {
 
 	ps, ok := r.GetPeerState(envelope.From)
 	if !ok || ps == nil {
-		r.Logger.Debug("failed to find peer state")
+		r.Logger.Debug("failed to find peer State")
 		return nil
 	}
 
@@ -1112,9 +1112,9 @@ func (r *Reactor) handleVoteMessage(envelope p2p.Envelope, msgI Message) error {
 
 	switch msg := envelope.Message.(type) {
 	case *tmcons.Vote:
-		r.state.mtx.RLock()
-		height, valSize, lastCommitSize := r.state.Height, r.state.Validators.Size(), r.state.LastCommit.Size()
-		r.state.mtx.RUnlock()
+		r.State.Mtx.RLock()
+		height, valSize, lastCommitSize := r.State.Height, r.State.Validators.Size(), r.State.LastCommit.Size()
+		r.State.Mtx.RUnlock()
 
 		vMsg := msgI.(*VoteMessage)
 
@@ -1122,7 +1122,7 @@ func (r *Reactor) handleVoteMessage(envelope p2p.Envelope, msgI Message) error {
 		ps.EnsureVoteBitArrays(height-1, lastCommitSize)
 		ps.SetHasVote(vMsg.Vote)
 
-		r.state.peerMsgQueue <- msgInfo{vMsg, envelope.From}
+		r.State.PeerMsgQueue <- MsgInfo{vMsg, envelope.From}
 
 	default:
 		return fmt.Errorf("received unknown message on VoteChannel: %T", msg)
@@ -1131,8 +1131,8 @@ func (r *Reactor) handleVoteMessage(envelope p2p.Envelope, msgI Message) error {
 	return nil
 }
 
-// handleVoteSetBitsMessage handles envelopes sent from peers on the
-// VoteSetBitsChannel. If we fail to find the peer state for the envelope sender,
+// handleVoteSetBitsMessage handles envelopes sent from Peers on the
+// VoteSetBitsChannel. If we fail to find the peer State for the envelope sender,
 // we perform a no-op and return. This can happen when we process the envelope
 // after the peer is removed.
 func (r *Reactor) handleVoteSetBitsMessage(envelope p2p.Envelope, msgI Message) error {
@@ -1140,7 +1140,7 @@ func (r *Reactor) handleVoteSetBitsMessage(envelope p2p.Envelope, msgI Message) 
 
 	ps, ok := r.GetPeerState(envelope.From)
 	if !ok || ps == nil {
-		r.Logger.Debug("failed to find peer state")
+		r.Logger.Debug("failed to find peer State")
 		return nil
 	}
 
@@ -1151,9 +1151,9 @@ func (r *Reactor) handleVoteSetBitsMessage(envelope p2p.Envelope, msgI Message) 
 
 	switch msg := envelope.Message.(type) {
 	case *tmcons.VoteSetBits:
-		r.state.mtx.RLock()
-		height, votes := r.state.Height, r.state.Votes
-		r.state.mtx.RUnlock()
+		r.State.Mtx.RLock()
+		height, votes := r.State.Height, r.State.Votes
+		r.State.Mtx.RUnlock()
 
 		vsbMsg := msgI.(*VoteSetBitsMessage)
 
@@ -1188,11 +1188,11 @@ func (r *Reactor) handleVoteSetBitsMessage(envelope p2p.Envelope, msgI Message) 
 // any error returned by sending a PeerError on the respective channel.
 //
 // NOTE: We process these messages even when we're fast_syncing. Messages affect
-// either a peer state or the consensus state. Peer state updates can happen in
+// either a peer State or the consensus State. Peer State updates can happen in
 // parallel, but processing of proposals, block parts, and votes are ordered by
 // the p2p channel.
 //
-// NOTE: We block on consensus state for proposals, block parts, and votes.
+// NOTE: We block on consensus State for proposals, block parts, and votes.
 func (r *Reactor) handleMessage(chID p2p.ChannelID, envelope p2p.Envelope) (err error) {
 	defer func() {
 		if e := recover(); e != nil {
@@ -1296,14 +1296,14 @@ func (r *Reactor) processDataCh() {
 // the reactor is stopped, we will catch the signal and close the p2p Channel
 // gracefully.
 func (r *Reactor) processVoteCh() {
-	defer r.voteCh.Close()
+	defer r.VoteCh.Close()
 
 	for {
 		select {
-		case envelope := <-r.voteCh.In:
-			if err := r.handleMessage(r.voteCh.ID, envelope); err != nil {
-				r.Logger.Error("failed to process message", "ch_id", r.voteCh.ID, "envelope", envelope, "err", err)
-				r.voteCh.Error <- p2p.PeerError{
+		case envelope := <-r.VoteCh.In:
+			if err := r.handleMessage(r.VoteCh.ID, envelope); err != nil {
+				r.Logger.Error("failed to process message", "ch_id", r.VoteCh.ID, "envelope", envelope, "err", err)
+				r.VoteCh.Error <- p2p.PeerError{
 					NodeID: envelope.From,
 					Err:    err,
 				}
@@ -1368,7 +1368,7 @@ func (r *Reactor) peerStatsRoutine() {
 		}
 
 		select {
-		case msg := <-r.state.statsMsgQueue:
+		case msg := <-r.State.statsMsgQueue:
 			ps, ok := r.GetPeerState(msg.PeerID)
 			if !ok || ps == nil {
 				r.Logger.Debug("attempt to update stats for non-existent peer", "peer", msg.PeerID)

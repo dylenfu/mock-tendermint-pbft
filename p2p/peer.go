@@ -87,6 +87,9 @@ type peer struct {
 
 	// User data
 	Data *cmap.CMap
+
+	metrics       *Metrics
+	metricsTicker *time.Ticker
 }
 
 type PeerOption func(*peer)
@@ -99,12 +102,14 @@ func newPeer(
 	options ...PeerOption,
 ) *peer {
 	p := &peer{
-		peerConn:    pc,
-		nodeInfo:    nodeInfo,
-		channels:    nodeInfo.Channels, // TODO
-		reactors:    reactorsByCh,
-		onPeerError: onPeerError,
-		Data:        cmap.NewCMap(),
+		peerConn:      pc,
+		nodeInfo:      nodeInfo,
+		channels:      nodeInfo.Channels, // TODO
+		reactors:      reactorsByCh,
+		onPeerError:   onPeerError,
+		Data:          cmap.NewCMap(),
+		metricsTicker: time.NewTicker(metricsTickerDuration),
+		metrics:       NopMetrics(),
 	}
 
 	p.BaseService = *service.NewBaseService(nil, "Peer", p)
@@ -144,6 +149,7 @@ func (p *peer) OnStart() error {
 	}
 
 	go p.processMessages()
+	go p.metricsReporter()
 
 	return nil
 }
@@ -176,6 +182,7 @@ func (p *peer) processMessages() {
 // .Send() calls will get flushed before closing the connection.
 // NOTE: it is not safe to call this method more than once.
 func (p *peer) FlushStop() {
+	p.metricsTicker.Stop()
 	p.BaseService.OnStop()
 	if err := p.conn.FlushClose(); err != nil {
 		p.Logger.Debug("error while stopping peer", "err", err)
@@ -184,6 +191,7 @@ func (p *peer) FlushStop() {
 
 // OnStop implements BaseService.
 func (p *peer) OnStop() {
+	p.metricsTicker.Stop()
 	p.BaseService.OnStop()
 	if err := p.conn.Close(); err != nil {
 		p.Logger.Debug("error while stopping peer", "err", err)
@@ -248,6 +256,13 @@ func (p *peer) Send(chID byte, msgBytes []byte) bool {
 		p.onError(err)
 		return false
 	}
+	if res {
+		labels := []string{
+			"peer_id", string(p.ID()),
+			"chID", fmt.Sprintf("%#x", chID),
+		}
+		p.metrics.PeerSendBytesTotal.With(labels...).Add(float64(len(msgBytes)))
+	}
 	return res
 }
 
@@ -265,6 +280,13 @@ func (p *peer) TrySend(chID byte, msgBytes []byte) bool {
 	} else if err != nil {
 		p.onError(err)
 		return false
+	}
+	if res {
+		labels := []string{
+			"peer_id", string(p.ID()),
+			"chID", fmt.Sprintf("%#x", chID),
+		}
+		p.metrics.PeerSendBytesTotal.With(labels...).Add(float64(len(msgBytes)))
 	}
 	return res
 }
@@ -319,5 +341,30 @@ func (p *peer) RemoteAddr() net.Addr {
 	return &net.TCPAddr{
 		IP:   endpoint.IP,
 		Port: int(endpoint.Port),
+	}
+}
+
+//---------------------------------------------------
+
+func PeerMetrics(metrics *Metrics) PeerOption {
+	return func(p *peer) {
+		p.metrics = metrics
+	}
+}
+
+func (p *peer) metricsReporter() {
+	for {
+		select {
+		case <-p.metricsTicker.C:
+			status := p.conn.Status()
+			var sendQueueSize float64
+			for _, chStatus := range status.Channels {
+				sendQueueSize += float64(chStatus.SendQueueSize)
+			}
+
+			p.metrics.PeerPendingSendBytes.With("peer_id", string(p.ID())).Set(sendQueueSize)
+		case <-p.Quit():
+			return
+		}
 	}
 }

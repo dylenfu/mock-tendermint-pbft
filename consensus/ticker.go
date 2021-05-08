@@ -12,13 +12,13 @@ var (
 )
 
 // TimeoutTicker is a timer that schedules timeouts
-// conditional on the height/round/step in the timeoutInfo.
-// The timeoutInfo.Duration may be non-positive.
+// conditional on the height/round/step in the TimeoutInfo.
+// The TimeoutInfo.Duration may be non-positive.
 type TimeoutTicker interface {
 	Start() error
 	Stop() error
-	Chan() <-chan timeoutInfo       // on which to receive a timeout
-	ScheduleTimeout(ti timeoutInfo) // reset the timer
+	Chan() <-chan TimeoutInfo       // on which to receive a timeout
+	ScheduleTimeout(ti TimeoutInfo) // reset the timer
 
 	SetLogger(log.Logger)
 }
@@ -32,16 +32,16 @@ type timeoutTicker struct {
 	service.BaseService
 
 	timer    *time.Timer
-	tickChan chan timeoutInfo // for scheduling timeouts
-	tockChan chan timeoutInfo // for notifying about them
+	tickChan chan TimeoutInfo // for scheduling timeouts
+	tockChan chan TimeoutInfo // for notifying about them
 }
 
 // NewTimeoutTicker returns a new TimeoutTicker.
 func NewTimeoutTicker() TimeoutTicker {
 	tt := &timeoutTicker{
 		timer:    time.NewTimer(0),
-		tickChan: make(chan timeoutInfo, tickTockBufferSize),
-		tockChan: make(chan timeoutInfo, tickTockBufferSize),
+		tickChan: make(chan TimeoutInfo, tickTockBufferSize),
+		tockChan: make(chan TimeoutInfo, tickTockBufferSize),
 	}
 	tt.BaseService = *service.NewBaseService(nil, "TimeoutTicker", tt)
 	tt.stopTimer() // don't want to fire until the first scheduled timeout
@@ -63,14 +63,14 @@ func (t *timeoutTicker) OnStop() {
 }
 
 // Chan returns a channel on which timeouts are sent.
-func (t *timeoutTicker) Chan() <-chan timeoutInfo {
+func (t *timeoutTicker) Chan() <-chan TimeoutInfo {
 	return t.tockChan
 }
 
 // ScheduleTimeout schedules a new timeout by sending on the internal tickChan.
 // The timeoutRoutine is always available to read from tickChan, so this won't block.
 // The scheduling may fail if the timeoutRoutine has already scheduled a timeout for a later height/round/step.
-func (t *timeoutTicker) ScheduleTimeout(ti timeoutInfo) {
+func (t *timeoutTicker) ScheduleTimeout(ti TimeoutInfo) {
 	t.tickChan <- ti
 }
 
@@ -93,7 +93,7 @@ func (t *timeoutTicker) stopTimer() {
 // timeouts of 0 on the tickChan will be immediately relayed to the tockChan
 func (t *timeoutTicker) timeoutRoutine() {
 	t.Logger.Debug("Starting timeout routine")
-	var ti timeoutInfo
+	var ti TimeoutInfo
 	for {
 		select {
 		case newti := <-t.tickChan:
@@ -115,7 +115,7 @@ func (t *timeoutTicker) timeoutRoutine() {
 			// stop the last timer
 			t.stopTimer()
 
-			// update timeoutInfo and reset timer
+			// update TimeoutInfo and reset timer
 			// NOTE time.Timer allows duration to be non-positive
 			ti = newti
 			t.timer.Reset(ti.Duration)
@@ -126,7 +126,7 @@ func (t *timeoutTicker) timeoutRoutine() {
 			// Determinism comes from playback in the receiveRoutine.
 			// We can eliminate it by merging the timeoutRoutine into receiveRoutine
 			//  and managing the timeouts ourselves with a millisecond ticker
-			go func(toi timeoutInfo) { t.tockChan <- toi }(ti)
+			go func(toi TimeoutInfo) { t.tockChan <- toi }(ti)
 		case <-t.Quit():
 			return
 		}

@@ -29,7 +29,7 @@ const (
 //--------------------------------------------------------
 // replay messages interactively or all at once
 
-// replay the wal file
+// replay the Wal file
 func RunReplayFile(config cfg.BaseConfig, csConfig *cfg.ConsensusConfig, console bool) {
 	consensusState := newConsensusStateForReplay(config, csConfig)
 
@@ -44,8 +44,8 @@ func (cs *State) ReplayFile(file string, console bool) error {
 	if cs.IsRunning() {
 		return errors.New("cs is already running, cannot replay")
 	}
-	if cs.wal != nil {
-		return errors.New("cs wal is open, cannot replay")
+	if cs.Wal != nil {
+		return errors.New("cs Wal is open, cannot replay")
 	}
 
 	cs.startForReplay()
@@ -53,23 +53,23 @@ func (cs *State) ReplayFile(file string, console bool) error {
 	// ensure all new step events are regenerated as expected
 
 	ctx := context.Background()
-	newStepSub, err := cs.eventBus.Subscribe(ctx, subscriber, types.EventQueryNewRoundStep)
+	newStepSub, err := cs.EventBus.Subscribe(ctx, subscriber, types.EventQueryNewRoundStep)
 	if err != nil {
 		return fmt.Errorf("failed to subscribe %s to %v", subscriber, types.EventQueryNewRoundStep)
 	}
 	defer func() {
-		if err := cs.eventBus.Unsubscribe(ctx, subscriber, types.EventQueryNewRoundStep); err != nil {
+		if err := cs.EventBus.Unsubscribe(ctx, subscriber, types.EventQueryNewRoundStep); err != nil {
 			cs.Logger.Error("Error unsubscribing to event bus", "err", err)
 		}
 	}()
 
-	// just open the file for reading, no need to use wal
+	// just open the file for reading, no need to use Wal
 	fp, err := os.OpenFile(file, os.O_RDONLY, 0600)
 	if err != nil {
 		return err
 	}
 
-	pb := newPlayback(file, fp, cs, cs.state.Copy())
+	pb := newPlayback(file, fp, cs, cs.State.Copy())
 	defer pb.fp.Close()
 
 	var nextN int // apply N msgs in a row
@@ -122,16 +122,16 @@ func newPlayback(fileName string, fp *os.File, cs *State, genState sm.State) *pl
 	}
 }
 
-// go back count steps by resetting the state and running (pb.count - count) steps
+// go back count steps by resetting the State and running (pb.count - count) steps
 func (pb *playback) replayReset(count int, newStepSub types.Subscription) error {
 	if err := pb.cs.Stop(); err != nil {
 		return err
 	}
 	pb.cs.Wait()
 
-	newCS := NewState(pb.cs.config, pb.genesisState.Copy(), pb.cs.blockExec,
+	newCS := NewState(pb.cs.config, pb.genesisState.Copy(), pb.cs.BlockExec,
 		pb.cs.blockStore, pb.cs.txNotifier, pb.cs.evpool)
-	newCS.SetEventBus(pb.cs.eventBus)
+	newCS.SetEventBus(pb.cs.EventBus)
 	newCS.startForReplay()
 
 	if err := pb.fp.Close(); err != nil {
@@ -214,19 +214,19 @@ func (pb *playback) replayConsoleLoop() int {
 			// "back" -> go back one message
 			// "back N" -> go back N messages
 
-			// NOTE: "back" is not supported in the state machine design,
+			// NOTE: "back" is not supported in the State machine design,
 			// so we restart and replay up to
 
 			ctx := context.Background()
 			// ensure all new step events are regenerated as expected
 
-			newStepSub, err := pb.cs.eventBus.Subscribe(ctx, subscriber, types.EventQueryNewRoundStep)
+			newStepSub, err := pb.cs.EventBus.Subscribe(ctx, subscriber, types.EventQueryNewRoundStep)
 			if err != nil {
 				tmos.Exit(fmt.Sprintf("failed to subscribe %s to %v", subscriber, types.EventQueryNewRoundStep))
 			}
 			defer func() {
-				if err := pb.cs.eventBus.Unsubscribe(ctx, subscriber, types.EventQueryNewRoundStep); err != nil {
-					pb.cs.Logger.Error("Error unsubscribing from eventBus", "err", err)
+				if err := pb.cs.EventBus.Unsubscribe(ctx, subscriber, types.EventQueryNewRoundStep); err != nil {
+					pb.cs.Logger.Error("Error unsubscribing from EventBus", "err", err)
 				}
 			}()
 
@@ -246,9 +246,9 @@ func (pb *playback) replayConsoleLoop() int {
 			}
 
 		case "rs":
-			// "rs" -> print entire round state
+			// "rs" -> print entire round State
 			// "rs short" -> print height/round/step
-			// "rs <field>" -> print another field of the round state
+			// "rs <field>" -> print another field of the round State
 
 			rs := pb.cs.RoundState
 			if len(tokens) == 1 {
@@ -293,7 +293,7 @@ func newConsensusStateForReplay(config cfg.BaseConfig, csConfig *cfg.ConsensusCo
 	blockStore := store.NewBlockStore(blockStoreDB)
 
 	// Get State
-	stateDB, err := dbm.NewDB("state", dbType, config.DBDir())
+	stateDB, err := dbm.NewDB("State", dbType, config.DBDir())
 	if err != nil {
 		tmos.Exit(err.Error())
 	}

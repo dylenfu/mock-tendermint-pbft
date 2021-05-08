@@ -46,9 +46,9 @@ type EndHeightMessage struct {
 type WALMessage interface{}
 
 func init() {
-	tmjson.RegisterType(msgInfo{}, "tendermint/wal/MsgInfo")
-	tmjson.RegisterType(timeoutInfo{}, "tendermint/wal/TimeoutInfo")
-	tmjson.RegisterType(EndHeightMessage{}, "tendermint/wal/EndHeightMessage")
+	tmjson.RegisterType(MsgInfo{}, "tendermint/Wal/MsgInfo")
+	tmjson.RegisterType(TimeoutInfo{}, "tendermint/Wal/TimeoutInfo")
+	tmjson.RegisterType(EndHeightMessage{}, "tendermint/Wal/EndHeightMessage")
 }
 
 //--------------------------------------------------------
@@ -70,7 +70,7 @@ type WAL interface {
 
 // Write ahead logger writes msgs to disk before they are processed.
 // Can be used for crash-recovery and deterministic replay.
-// TODO: currently the wal is overwritten during replay catchup, give it a mode
+// TODO: currently the Wal is overwritten during replay catchup, give it a mode
 // so it's either reading or appending - must read to end to start appending
 // again.
 type BaseWAL struct {
@@ -167,7 +167,7 @@ func (wal *BaseWAL) OnStop() {
 		wal.Logger.Error("error on flush data to disk", "error", err)
 	}
 	if err := wal.group.Stop(); err != nil {
-		wal.Logger.Error("error trying to stop wal", "error", err)
+		wal.Logger.Error("error trying to stop Wal", "error", err)
 	}
 	wal.group.Close()
 }
@@ -179,7 +179,7 @@ func (wal *BaseWAL) Wait() {
 }
 
 // Write is called in newStep and for each receive on the
-// peerMsgQueue and the timeoutTicker.
+// PeerMsgQueue and the timeoutTicker.
 // NOTE: does not call fsync()
 func (wal *BaseWAL) Write(msg WALMessage) error {
 	if wal == nil {
@@ -187,7 +187,7 @@ func (wal *BaseWAL) Write(msg WALMessage) error {
 	}
 
 	if err := wal.enc.Encode(&TimedWALMessage{tmtime.Now(), msg}); err != nil {
-		wal.Logger.Error("Error writing msg to consensus wal. WARNING: recover may not be possible for the current height",
+		wal.Logger.Error("Error writing msg to consensus Wal. WARNING: recover may not be possible for the current height",
 			"err", err, "msg", msg)
 		return err
 	}
@@ -208,7 +208,7 @@ func (wal *BaseWAL) WriteSync(msg WALMessage) error {
 	}
 
 	if err := wal.FlushAndSync(); err != nil {
-		wal.Logger.Error(`WriteSync failed to flush consensus wal.
+		wal.Logger.Error(`WriteSync failed to flush consensus Wal.
 		WARNING: may result in creating alternative proposals / votes for the current height iff the node restarted`,
 			"err", err)
 		return err

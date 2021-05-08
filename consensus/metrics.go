@@ -55,7 +55,7 @@ type Metrics struct {
 	CommittedHeight metrics.Gauge
 	// Whether or not a node is fast syncing. 1 if yes, 0 if no.
 	FastSyncing metrics.Gauge
-	// Whether or not a node is state syncing. 1 if yes, 0 if no.
+	// Whether or not a node is State syncing. 1 if yes, 0 if no.
 	StateSyncing metrics.Gauge
 
 	// Number of blockparts transmitted by peer.
@@ -178,7 +178,7 @@ func PrometheusMetrics(namespace string, labelsAndValues ...string) *Metrics {
 			Namespace: namespace,
 			Subsystem: MetricsSubsystem,
 			Name:      "state_syncing",
-			Help:      "Whether or not a node is state syncing. 1 if yes, 0 if no.",
+			Help:      "Whether or not a node is State syncing. 1 if yes, 0 if no.",
 		}, labels).With(labelsAndValues...),
 		BlockParts: prometheus.NewCounterFrom(stdprometheus.CounterOpts{
 			Namespace: namespace,

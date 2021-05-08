@@ -585,7 +585,7 @@ func WALToProto(msg WALMessage) (*tmcons.WALMessage, error) {
 				},
 			},
 		}
-	case msgInfo:
+	case MsgInfo:
 		consMsg, err := MsgToProto(msg.Msg)
 		if err != nil {
 			return nil, err
@@ -599,7 +599,7 @@ func WALToProto(msg WALMessage) (*tmcons.WALMessage, error) {
 			},
 		}
 
-	case timeoutInfo:
+	case TimeoutInfo:
 		pb = tmcons.WALMessage{
 			Sum: &tmcons.WALMessage_TimeoutInfo{
 				TimeoutInfo: &tmcons.TimeoutInfo{
@@ -621,13 +621,13 @@ func WALToProto(msg WALMessage) (*tmcons.WALMessage, error) {
 		}
 
 	default:
-		return nil, fmt.Errorf("to proto: wal message not recognized: %T", msg)
+		return nil, fmt.Errorf("to proto: Wal message not recognized: %T", msg)
 	}
 
 	return &pb, nil
 }
 
-// WALFromProto takes a proto wal message and return a consensus walMessage and
+// WALFromProto takes a proto Wal message and return a consensus walMessage and
 // error.
 func WALFromProto(msg *tmcons.WALMessage) (WALMessage, error) {
 	if msg == nil {
@@ -647,9 +647,9 @@ func WALFromProto(msg *tmcons.WALMessage) (WALMessage, error) {
 	case *tmcons.WALMessage_MsgInfo:
 		walMsg, err := MsgFromProto(&msg.MsgInfo.Msg)
 		if err != nil {
-			return nil, fmt.Errorf("msgInfo from proto error: %w", err)
+			return nil, fmt.Errorf("MsgInfo from proto error: %w", err)
 		}
-		pb = msgInfo{
+		pb = MsgInfo{
 			Msg:    walMsg,
 			PeerID: p2p.NodeID(msg.MsgInfo.PeerID),
 		}
@@ -661,7 +661,7 @@ func WALFromProto(msg *tmcons.WALMessage) (WALMessage, error) {
 			return nil, fmt.Errorf("denying message due to possible overflow: %w", err)
 		}
 
-		pb = timeoutInfo{
+		pb = TimeoutInfo{
 			Duration: msg.TimeoutInfo.Duration,
 			Height:   msg.TimeoutInfo.Height,
 			Round:    msg.TimeoutInfo.Round,
@@ -678,7 +678,7 @@ func WALFromProto(msg *tmcons.WALMessage) (WALMessage, error) {
 		return pb, nil
 
 	default:
-		return nil, fmt.Errorf("from proto: wal message not recognized: %T", msg)
+		return nil, fmt.Errorf("from proto: Wal message not recognized: %T", msg)
 	}
 
 	return pb, nil

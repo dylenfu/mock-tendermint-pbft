@@ -18,8 +18,8 @@ import (
 )
 
 var (
-	ErrPeerStateHeightRegression = errors.New("peer state height regression")
-	ErrPeerStateInvalidStartTime = errors.New("peer state invalid startTime")
+	ErrPeerStateHeightRegression = errors.New("peer State height regression")
+	ErrPeerStateInvalidStartTime = errors.New("peer State invalid startTime")
 )
 
 // peerStateStats holds internal statistics for a peer.
@@ -32,12 +32,12 @@ func (pss peerStateStats) String() string {
 	return fmt.Sprintf("peerStateStats{votes: %d, blockParts: %d}", pss.Votes, pss.BlockParts)
 }
 
-// PeerState contains the known state of a peer, including its connection and
+// PeerState contains the known State of a peer, including its connection and
 // threadsafe access to its PeerRoundState.
 // NOTE: THIS GETS DUMPED WITH rpc/core/consensus.go.
 // Be mindful of what you Expose.
 type PeerState struct {
-	peerID p2p.NodeID
+	PeerID p2p.NodeID
 	logger log.Logger
 
 	// NOTE: Modify below using setters, never directly.
@@ -53,7 +53,7 @@ type PeerState struct {
 // NewPeerState returns a new PeerState for the given node ID.
 func NewPeerState(logger log.Logger, peerID p2p.NodeID) *PeerState {
 	return &PeerState{
-		peerID: peerID,
+		PeerID: peerID,
 		logger: logger,
 		closer: tmsync.NewCloser(),
 		PRS: cstypes.PeerRoundState{
@@ -66,7 +66,7 @@ func NewPeerState(logger log.Logger, peerID p2p.NodeID) *PeerState {
 	}
 }
 
-// SetRunning sets the running state of the peer.
+// SetRunning sets the running State of the peer.
 func (ps *PeerState) SetRunning(v bool) {
 	ps.mtx.Lock()
 	defer ps.mtx.Unlock()
@@ -102,7 +102,7 @@ func (ps *PeerState) ToJSON() ([]byte, error) {
 }
 
 // GetHeight returns an atomic snapshot of the PeerRoundState's height used by
-// the mempool to ensure peers are caught up before broadcasting new txs.
+// the mempool to ensure Peers are caught up before broadcasting new txs.
 func (ps *PeerState) GetHeight() int64 {
 	ps.mtx.Lock()
 	defer ps.mtx.Unlock()
@@ -380,7 +380,7 @@ func (ps *PeerState) setHasVote(height int64, round int32, voteType tmproto.Sign
 	}
 }
 
-// ApplyNewRoundStepMessage updates the peer state for the new round.
+// ApplyNewRoundStepMessage updates the peer State for the new round.
 func (ps *PeerState) ApplyNewRoundStepMessage(msg *NewRoundStepMessage) {
 	ps.mtx.Lock()
 	defer ps.mtx.Unlock()
@@ -439,7 +439,7 @@ func (ps *PeerState) ApplyNewRoundStepMessage(msg *NewRoundStepMessage) {
 	}
 }
 
-// ApplyNewValidBlockMessage updates the peer state for the new valid block.
+// ApplyNewValidBlockMessage updates the peer State for the new valid block.
 func (ps *PeerState) ApplyNewValidBlockMessage(msg *NewValidBlockMessage) {
 	ps.mtx.Lock()
 	defer ps.mtx.Unlock()
@@ -456,7 +456,7 @@ func (ps *PeerState) ApplyNewValidBlockMessage(msg *NewValidBlockMessage) {
 	ps.PRS.ProposalBlockParts = msg.BlockParts
 }
 
-// ApplyProposalPOLMessage updates the peer state for the new proposal POL.
+// ApplyProposalPOLMessage updates the peer State for the new proposal POL.
 func (ps *PeerState) ApplyProposalPOLMessage(msg *ProposalPOLMessage) {
 	ps.mtx.Lock()
 	defer ps.mtx.Unlock()
@@ -473,7 +473,7 @@ func (ps *PeerState) ApplyProposalPOLMessage(msg *ProposalPOLMessage) {
 	ps.PRS.ProposalPOL = msg.ProposalPOL
 }
 
-// ApplyHasVoteMessage updates the peer state for the new vote.
+// ApplyHasVoteMessage updates the peer State for the new vote.
 func (ps *PeerState) ApplyHasVoteMessage(msg *HasVoteMessage) {
 	ps.mtx.Lock()
 	defer ps.mtx.Unlock()
@@ -485,7 +485,7 @@ func (ps *PeerState) ApplyHasVoteMessage(msg *HasVoteMessage) {
 	ps.setHasVote(msg.Height, msg.Round, msg.Type, msg.Index)
 }
 
-// ApplyVoteSetBitsMessage updates the peer state for the bit-array of votes
+// ApplyVoteSetBitsMessage updates the peer State for the bit-array of votes
 // it claims to have for the corresponding BlockID.
 // `ourVotes` is a BitArray of votes we have for msg.BlockID
 // NOTE: if ourVotes is nil (e.g. msg.Height < rs.Height),
@@ -520,7 +520,7 @@ func (ps *PeerState) StringIndented(indent string) string {
 %s  RoundState %v
 %s  Stats      %v
 %s}`,
-		indent, ps.peerID,
+		indent, ps.PeerID,
 		indent, ps.PRS.StringIndented(indent+"  "),
 		indent, ps.Stats,
 		indent,

@@ -15,6 +15,9 @@ import (
 type Reactor interface {
 	service.Service // Start, Stop
 
+	// SetSwitch allows setting a switch.
+	SetSwitch(*Switch)
+
 	// GetChannels returns the list of MConnection.ChannelDescriptor. Make sure
 	// that each ID is unique across all the reactors added to the switch.
 	GetChannels() []*conn.ChannelDescriptor
@@ -51,14 +54,19 @@ type Reactor interface {
 
 type BaseReactor struct {
 	service.BaseService // Provides Start, Stop, .Quit
+	Switch              *Switch
 }
 
 func NewBaseReactor(name string, impl Reactor) *BaseReactor {
 	return &BaseReactor{
 		BaseService: *service.NewBaseService(nil, name, impl),
+		Switch:      nil,
 	}
 }
 
+func (br *BaseReactor) SetSwitch(sw *Switch) {
+	br.Switch = sw
+}
 func (*BaseReactor) GetChannels() []*conn.ChannelDescriptor        { return nil }
 func (*BaseReactor) AddPeer(peer Peer)                             {}
 func (*BaseReactor) RemovePeer(peer Peer, reason interface{})      {}
