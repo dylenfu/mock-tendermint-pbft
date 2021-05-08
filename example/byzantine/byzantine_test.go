@@ -34,6 +34,7 @@ var (
 
 // Byzantine node sends two different prevotes (nil and blockID) to the same
 // validator.
+// go test -v github.com/tendermint/tendermint/example/byzantine -run TestByzantine
 func TestByzantine(t *testing.T) {
 	config := common.ConfigSetup(t)
 
